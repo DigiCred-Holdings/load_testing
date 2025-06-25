@@ -1,0 +1,141 @@
+x-locust-base: &locust-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: local/locust:latest
+  working_dir: /mnt/locust
+  volumes:
+    - ./stats:/mnt/locust/stats
+    - ./locust-scripts:/mnt/locust/loadtest
+  networks:
+    - locust-net
+  environment:
+    - PROMETHEUS_METRICS_PORT=8080
+    - PYTHONUNBUFFERED=1
+    - TZ=UTC
+
+services:
+  master:
+    <<: *locust-base
+    container_name: locust-master
+    hostname: master
+    ports:
+      - "8089:8089"  # Web UI
+      - "5557:5557"  # Master-Worker communication
+      - "5558:5558"  # Master-Worker communication
+      - "8080:8080"  # Prometheus metrics
+    entrypoint: "locust"
+    command:
+      - --master
+      - --web-host=0.0.0.0
+      - --web-port=8089
+      - --master-bind-host=0.0.0.0
+      - --master-bind-port=5557
+      - --expect-workers=2
+      - --locustfile=/mnt/locust/loadtest/locustfile.py
+      - --users=1
+      - --spawn-rate=1
+      - --csv=/mnt/locust/stats/test_stats
+      - --csv-full-history
+      - --print-stats
+      - --logfile=/mnt/locust/stats/master.log
+      - --loglevel=DEBUG
+    environment:
+      - LOCUST_MODE=master
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8089/"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    <<: *locust-base
+    command:
+      - "--worker"
+      - "--master-host=master"
+      - "--master-port=5557"
+      - "--locustfile=/mnt/locust/loadtest/locustfile.py"
+      - "--logfile=/mnt/locust/stats/worker.log"
+      - "--loglevel=DEBUG"
+    depends_on:
+      master:
+        condition: service_healthy
+    environment:
+      - LOCUST_MODE=worker
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.50.0
+    container_name: locust-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - locust-net
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.external-url=http://localhost:9090'
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: locust-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - locust-net
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+networks:
+  locust-net:
+    name: locust-network
+    driver: bridge
+
+volumes:
+  grafana-storage:
+    name: locust-grafana-storage
+  prometheus-data:
+    name: locust-prometheus-storage
