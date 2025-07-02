@@ -1,0 +1,13 @@
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  locust-worker:
+    image: locustio/locust
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+

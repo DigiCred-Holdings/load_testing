@@ -1,0 +1,94 @@
+version: '3.8'
+
+x-locust-base: &locust-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: locust-custom:2.15.1  # This should match what we're building
+  working_dir: /mnt/locust
+  volumes:
+    - ./stats:/mnt/locust/stats
+    - ./locust-scripts:/mnt/locust
+  networks:
+    - locust-net
+  environment:
+    - PROMETHEUS_METRICS_PORT=8080
+    - PYTHONUNBUFFERED=1
+
+services:
+  master:
+    <<: *locust-base
+    container_name: locust-master
+    hostname: master
+    env_file:
+      - .env
+    ports:
+      - "8089:8089"
+      - "5557:5557"
+      - "5558:5558"
+      - "8080:8080"
+    entrypoint: "locust"
+    command:
+      - --master
+      - --web-host=0.0.0.0
+      - --web-port=8089
+      - --master-bind-host=0.0.0.0
+      - --master-bind-port=5557
+      - --expect-workers=3
+      - --locustfile=/mnt/locust/locustfile.py
+      - --users=10000
+      - --spawn-rate=10
+      - --csv=/mnt/locust/stats/test_stats
+      - --csv-full-history
+      - --print-stats
+      - --logfile=/mnt/locust/stats/master.log
+      - --loglevel=DEBUG
+  worker:
+    <<: *locust-base
+    command:
+      - "--worker"
+      - "--master-host=master"
+      - "--master-port=5557"
+      - "--locustfile=/mnt/locust/locustfile.py"
+      - "--logfile=/mnt/locust/stats/worker.log"
+      - "--loglevel=DEBUG"
+    env_file:
+      - .env
+    depends_on:
+      - master
+    deploy:
+      replicas: 3
+
+  prometheus:
+    image: prom/prometheus:v2.50.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - locust-net
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports:
+      - "3002:3000"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - locust-net
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+
+networks:
+  locust-net:
+    driver: bridge
+
+volumes:
+  grafana-storage:
+  prometheus-data:

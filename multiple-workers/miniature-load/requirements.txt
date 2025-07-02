@@ -1,0 +1,6 @@
+# requirements.txt
+locust>=2.15.1
+requests>=2.31.0
+Faker>=19.3.0
+python-dotenv>=1.0.0
+# Add any other dependencies your tests need
