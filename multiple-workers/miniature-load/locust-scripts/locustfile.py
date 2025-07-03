@@ -17,7 +17,7 @@ import gevent
 
 import redis
 
-r = redis.Redis(host='172.17.0.1', port=6379, decode_responses=True)
+r = redis.Redis(host=os.getenv("REDIS_HOST"), port=int(os.getenv("REDIS_PORT")), decode_responses=True)
 
 # Configure logging
 LOG_DIR = "/mnt/locust/stats"
@@ -52,16 +52,16 @@ ERROR_COUNT = Counter(
 
 class TestConfig:
     HOSTS = [
-        "http://worker1_url",
-        "http://worker2_url",
-        "http://worker3_url"
+        os.getenv("SERVER1_URL"),
+        os.getenv("SERVER2_URL"),
+        os.getenv("SERVER3_URL")
     ]
 
     REQUEST_TIMEOUT = 30
     BASE_PORT = 5000
     PORT_RANGE = 1000  # allows ports 5000–5999
-    redis_host = os.getenv("REDIS_HOST", "172.17.0.1")
-    redis_port = int(os.getenv("REDIS_PORT", 6379))
+    redis_host = os.getenv("REDIS_HOST")
+    redis_port = int(os.getenv("REDIS_PORT"))
     redis_prefix = "locust_ports"
 
     redis_client = redis.StrictRedis(host=redis_host, port=redis_port, decode_responses=True)
@@ -100,9 +100,6 @@ class UserBehavior(SequentialTaskSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.connection_id = None
-        #self.user_id = 0
-        #self.user_count = 0
-        #self.user_count_lock = Lock()
         self.port = ''
         self.current_host = ''
 
@@ -120,13 +117,10 @@ class UserBehavior(SequentialTaskSet):
 
     
     def on_start(self):
-        #with self.user_count_lock:
-        #    self.user_id = self.user_count
-        #    self.user_count += 1
         self.worker_id = int(getattr(self.user.environment.runner, "worker_id", -1))
         self.reset_state()
         logger.info(f"Starting user host {self.current_host}")    
-        #print(f"Starting user with user_id: {self.user_id}")
+
     def handle_request(self, method: str, endpoint: str, payload: Dict = None, 
                       name: str = None) -> tuple[bool, Union[Dict, None]]:
         """Request handler with detailed logging"""
@@ -194,7 +188,6 @@ class UserBehavior(SequentialTaskSet):
                 logger.info(f"createinvite response_data: {response_data}")
                 self.invitation_url = response_data['invitation_url']
                 logger.info(f"createinvite response_data invitation_url: {self.invitation_url}")
-                #get connection Id where 
 
             except Exception as e:
                 logger.error(f"Error processing createinvite response: {str(e)}")
@@ -226,12 +219,9 @@ class UserBehavior(SequentialTaskSet):
                 logger.info(f"connections response_data: {response_data}")
                 self.connection_id = [item["id"] for item in response_data if item["theirLabel"] != "Cloud Mediator"][0]
                 logger.info(f"connections response_data: {self.connection_id}")
-                #get connection Id where 
 
                 if self.connection_id:
                     logger.info(f"Extracted connection ID: {self.connection_id}")
-                    #with open(os.path.join(LOG_DIR, 'connection_ids.log'), 'a') as f:
-                    #    f.write(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')} - Connection ID: {self.connection_id}\n")
             except Exception as e:
                 logger.error(f"Error processing student invite response: {str(e)}")
 
