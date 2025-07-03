@@ -33,7 +33,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-usernames = ["alice", "bob", "carol", "dave"]
 # Prometheus metrics
 REQUEST_COUNT = Counter(
     'locust_request_count',
@@ -101,13 +100,9 @@ class UserBehavior(SequentialTaskSet):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.connection_id = None
-        self.port_first = 5000
-        self.port = self.port_first
-        self.user_id = 0
-        self.user_count = 0
-        self.user_count_lock = Lock()
-        self.total_port = 0
-        self.username = ''
+        #self.user_id = 0
+        #self.user_count = 0
+        #self.user_count_lock = Lock()
         self.port = ''
         self.current_host = ''
 
@@ -125,13 +120,13 @@ class UserBehavior(SequentialTaskSet):
 
     
     def on_start(self):
-        with self.user_count_lock:
-            self.user_id = self.user_count
-            self.user_count += 1
+        #with self.user_count_lock:
+        #    self.user_id = self.user_count
+        #    self.user_count += 1
         self.worker_id = int(getattr(self.user.environment.runner, "worker_id", -1))
         self.reset_state()
-        logger.info(f"Starting user with user_id: {self.user_id} and host {self.current_host}")    
-        print(f"Starting user with user_id: {self.user_id}")
+        logger.info(f"Starting user host {self.current_host}")    
+        #print(f"Starting user with user_id: {self.user_id}")
     def handle_request(self, method: str, endpoint: str, payload: Dict = None, 
                       name: str = None) -> tuple[bool, Union[Dict, None]]:
         """Request handler with detailed logging"""
@@ -256,27 +251,17 @@ class UserBehavior(SequentialTaskSet):
             logger.info(f"Message sent successfully for connection ID: {self.connection_id}")
             self.message_sent = True
             self.reset_state()
-            
+
 class ApiTestUser(HttpUser):
     tasks = [UserBehavior]
     wait_time = between(3, 5)
     host = TestConfig.HOSTS[0]
-    user_index = 0
-    user_lock = Lock()
     def on_start(self):
         self.client.headers.update({
             'accept': 'application/json',
             'Content-Type': 'application/json',
             'Connection': 'keep-alive'
         })
-        with ApiTestUser.user_lock:
-            if ApiTestUser.user_index < len(usernames):
-                self.username = usernames[ApiTestUser.user_index]
-                ApiTestUser.user_index += 1
-            else:
-                self.username = f"user_{ApiTestUser.user_index}"
-                ApiTestUser.user_index += 1
-
         logger.info("Started test user")
 
 @events.init.add_listener
